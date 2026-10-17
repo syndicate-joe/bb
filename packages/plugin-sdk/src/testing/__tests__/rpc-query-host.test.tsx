@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { memo } from "react";
+import { QueryClient } from "@tanstack/react-query";
+import { createRpcQueryHooks } from "../../internal/rpc-query-host.js";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { experimental_useRpcKeyedQuery } from "../../app.js";
@@ -67,4 +69,57 @@ it("updates selected load state without rendering unchanged rows again", async (
   });
   await slot.findByText("2 loaded");
   expect(rendered).toHaveBeenCalledTimes(count);
+});
+
+it("retains plain and keyed watched reads until their consumers disable them", async () => {
+  const client = new QueryClient();
+  const releases: ReturnType<typeof vi.fn>[] = [];
+  const watch = vi.fn(() => {
+    const release = vi.fn();
+    releases.push(release);
+    return release;
+  });
+  const host = {
+    pluginId: "demo",
+    queryClient: client,
+    subscribe: () => () => {},
+    watch,
+    call: async (_plugin: string, method: string) => ({
+      result: method === "rows" ? { a: 1, b: 2 } : { ready: true },
+      whileWatched: true,
+    }),
+  };
+  const hooks = createRpcQueryHooks(() => host);
+  const probe = renderHook(
+    ({ enabled }) => {
+      const plain = hooks.experimental_useRpcQuery({
+        method: "read",
+        input: { v: 1 },
+        enabled,
+      });
+      hooks.experimental_useRpcKeyedQuery({
+        method: "rows",
+        keys: ["a", "b"],
+        enabled,
+      });
+      return plain;
+    },
+    { initialProps: { enabled: true } },
+  );
+  try {
+    await waitFor(() => expect(watch).toHaveBeenCalledTimes(3));
+    expect(watch.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["demo", "read", { input: { v: 1 } }],
+        ["demo", "rows", { key: "a" }],
+        ["demo", "rows", { key: "b" }],
+      ]),
+    );
+    expect(probe.result.current.data).toEqual({ ready: true });
+    probe.rerender({ enabled: false });
+    for (const release of releases) expect(release).toHaveBeenCalledOnce();
+  } finally {
+    probe.unmount();
+    client.clear();
+  }
 });

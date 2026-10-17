@@ -412,6 +412,7 @@ export interface PluginService {
         tags: string[];
         keyTags: Record<string, string[]>;
         invalidated: string[];
+        whileWatched: boolean;
       }
     | { ok: false; error: PluginRpcError }
   >;
@@ -2177,7 +2178,11 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
         );
         if (envelope.invalidated.length > 0)
           deps.hub.notifyPluginChanged(id, envelope.invalidated);
-        return { result: resultValue, ...envelope };
+        return {
+          result: resultValue,
+          ...envelope,
+          whileWatched: handler.whileWatched === true,
+        };
       });
       if (outcome.ok) return { ok: true, ...outcome.value };
       if (outcome.cause instanceof PluginRpcBoundaryError) {

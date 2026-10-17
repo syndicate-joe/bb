@@ -13,7 +13,11 @@ import {
   useTaggedMutation,
   useQuerySelection,
 } from "@bb/query-tags";
-import { jsonValueSchema, type JsonValue } from "@bb/domain";
+import {
+  canonicalPluginReadInput,
+  jsonValueSchema,
+  type JsonValue,
+} from "@bb/domain";
 import { z } from "zod";
 import type {
   ExperimentalRpcKeyedQueryState,
@@ -25,9 +29,15 @@ export interface RpcQueryHost {
   queryClient: QueryClient;
   call(pluginId: string, method: string, input: JsonValue): Promise<unknown>;
   subscribe(pluginId: string): () => void;
+  watch?(
+    pluginId: string,
+    method: string,
+    read: { input: JsonValue } | { key: string },
+  ): () => void;
 }
 const envelopeSchema = z.object({
   result: jsonValueSchema,
+  whileWatched: z.boolean().default(false),
   tags: z.array(z.string()).default([]),
   keyTags: z.record(z.string(), z.array(z.string())).default({}),
   invalidated: z.array(z.string()).default([]),
@@ -37,6 +47,7 @@ const tagsOf = (data: Envelope) => [
   ...data.tags,
   ...Object.values(data.keyTags).flat(),
 ];
+const watchedMethods = new WeakMap<QueryClient, Set<string>>();
 const owners = new WeakMap<
   QueryClient,
   Map<string, ReturnType<typeof createTaggedKeyedQueryOwner<JsonValue>>>
@@ -74,14 +85,29 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
       },
       host.queryClient,
     );
+    const watchIdentity = canonicalPluginReadInput(input);
+    useEffect(() => {
+      if (options.enabled === false || !query.data?.whileWatched) return;
+      return host.watch?.(pluginId, options.method, {
+        input: jsonValueSchema.parse(JSON.parse(watchIdentity)),
+      });
+    }, [
+      host,
+      pluginId,
+      options.method,
+      watchIdentity,
+      options.enabled,
+      query.data?.whileWatched,
+    ]);
+    const refetch = useCallback(async () => {
+      await query.refetch();
+    }, [query.refetch]);
     return {
       data: query.data?.result,
       error: query.error,
       isLoading: query.isLoading,
       isFetching: query.isFetching,
-      refetch: async () => {
-        await query.refetch();
-      },
+      refetch,
     } as ReturnType<PluginSdkApp["experimental_useRpcQuery"]>;
   };
   function experimental_useRpcKeyedQuery<
@@ -102,6 +128,12 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
       () => z.array(z.string()).parse(JSON.parse(identity)),
       [identity],
     );
+    let watched = watchedMethods.get(host.queryClient);
+    if (!watched) {
+      watched = new Set();
+      watchedMethods.set(host.queryClient, watched);
+    }
+    const producers = watched;
     let cache = owners.get(host.queryClient);
     if (!cache) {
       cache = new Map();
@@ -118,6 +150,8 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
           const response = envelopeSchema.parse(
             await host.call(pluginId, options.method, { keys: [...keys] }),
           );
+          if (response.whileWatched) producers.add(id);
+          else producers.delete(id);
           return {
             ...response,
             result: z
@@ -151,15 +185,25 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
             .map((key) => [key, rows[key]]),
         ) as Record<string, T>;
         return {
+          whileWatched: producers.has(id),
           data: selectRows ? selectRows(data) : data,
           error: query.error,
           isLoading: enabled && keys.length > 0 && query.isLoading,
           isFetching: query.isFetching,
         };
       },
-      [keys, enabled, selectRows],
+      [keys, enabled, selectRows, producers, id],
     );
     const query = useQuerySelection(subscribe, getSnapshot, select);
+    useEffect(() => {
+      if (!enabled || !query.whileWatched) return;
+      const releases = keys.map((key) =>
+        host.watch?.(pluginId, options.method, { key }),
+      );
+      return () => {
+        releases.forEach((release) => release?.());
+      };
+    }, [host, pluginId, options.method, keys, enabled, query.whileWatched]);
     const refetch = useCallback(async () => {
       await current.observer.refetch();
     }, [current]);
