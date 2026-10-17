@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
+import { createRpcQueryHooks } from "../../internal/rpc-query-host.js";
 import { memo } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -67,4 +69,34 @@ it("updates selected load state without rendering unchanged rows again", async (
   });
   await slot.findByText("2 loaded");
   expect(rendered).toHaveBeenCalledTimes(count);
+});
+
+it("rereads fresh cached content on entry when requested", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+  let content = "original file";
+  const host = {
+    pluginId: "files",
+    queryClient: client,
+    call: async () => ({ result: content, tags: ["file"] }),
+    subscribe: () => () => {},
+  };
+  const hooks = createRpcQueryHooks(() => host);
+  function File() {
+    const query = hooks.experimental_useRpcQuery({
+      method: "file",
+      input: null,
+      refetchOnMount: "always",
+    });
+    return <p>{String(query.data ?? "Loading")}</p>;
+  }
+  const first = render(<File />);
+  await first.findByText("original file");
+  first.unmount();
+  content = "edited file";
+  const second = render(<File />);
+  await second.findByText("edited file");
+  second.unmount();
+  client.clear();
 });

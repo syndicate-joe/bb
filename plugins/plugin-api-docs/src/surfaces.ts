@@ -936,7 +936,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         summary:
           "Use RPC, HTTP, WebSocket, and realtime messages to connect the plugin. With this, a plugin can:",
         bullets: [
-          "Call its server from its UI with schema-checked RPC",
+          "Call schema-checked RPC and optionally reread external content on every entry",
           "Receive webhooks and serve HTTP or WebSocket routes",
           "Refresh tagged reads after writes, with shared caching and Retry on errors",
           "Publish RPC methods other plugins can discover",
@@ -958,6 +958,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "ExperimentalRpcQueryState",
           "ExperimentalRpcKeyedQueryState",
           "ExperimentalRpcQueryOptions",
+          "ExperimentalRpcQueryOptions.refetchOnMount",
           "ExperimentalRpcMutationOptions",
           "ExperimentalRpcMutationState",
           "PluginRpc.experimental_invalidate",

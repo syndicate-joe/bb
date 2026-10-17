@@ -3934,6 +3934,7 @@ export interface ExperimentalRpcQueryOptions<
   method: Method;
   input: StandardSchemaV1InferInput<Contract[Method]["input"]>;
   enabled?: boolean;
+  refetchOnMount?: boolean | "always";
 }
 
 export interface ExperimentalRpcMutationOptions<

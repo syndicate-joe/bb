@@ -64,6 +64,7 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
       {
         queryKey,
         enabled: options.enabled,
+        refetchOnMount: options.refetchOnMount,
         meta: taggedQueryMeta({ scope: pluginTagScope(pluginId), tagsOf }),
         queryFn: () =>
           runTaggedRead(host.queryClient, queryKey, async () =>
