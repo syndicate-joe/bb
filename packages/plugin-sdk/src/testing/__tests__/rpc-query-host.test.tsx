@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, waitFor } from "@testing-library/react";
 import { memo } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { experimental_useRpcKeyedQuery } from "../../app.js";
+import {
+  experimental_useRpcKeyedQuery,
+  experimental_useRpcQuery,
+} from "../../app.js";
 import { defineRpcContract } from "../../rpc-contract.js";
 import { renderSlot } from "../app.js";
 
@@ -67,4 +70,33 @@ it("updates selected load state without rendering unchanged rows again", async (
   });
   await slot.findByText("2 loaded");
   expect(rendered).toHaveBeenCalledTimes(count);
+});
+
+it("reports successful reads even when their data stays unchanged", async () => {
+  const contract = defineRpcContract({
+    value: { input: z.null(), output: z.number(), tags: () => ["value"] },
+  });
+  function Probe() {
+    const query = experimental_useRpcQuery<typeof contract, "value">({
+      method: "value",
+      input: null,
+    });
+    return <output>{query.dataUpdatedAt}</output>;
+  }
+  const slot = renderSlot(
+    { component: Probe },
+    {},
+    {
+      experimental_rpcContract: contract,
+      rpc: { value: () => 7 },
+    },
+  );
+  await waitFor(() =>
+    expect(Number(slot.container.textContent)).toBeGreaterThan(0),
+  );
+  const first = Number(slot.container.textContent);
+  await slot.experimental_invalidateRpc(["value"]);
+  await waitFor(() =>
+    expect(Number(slot.container.textContent)).toBeGreaterThan(first),
+  );
 });

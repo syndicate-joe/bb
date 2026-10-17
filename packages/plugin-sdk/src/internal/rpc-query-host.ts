@@ -76,6 +76,7 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
     );
     return {
       data: query.data?.result,
+      dataUpdatedAt: query.dataUpdatedAt,
       error: query.error,
       isLoading: query.isLoading,
       isFetching: query.isFetching,
@@ -152,6 +153,7 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
         ) as Record<string, T>;
         return {
           data: selectRows ? selectRows(data) : data,
+          dataUpdatedAt: query.dataUpdatedAt,
           error: query.error,
           isLoading: enabled && keys.length > 0 && query.isLoading,
           isFetching: query.isFetching,
