@@ -3934,6 +3934,8 @@ export interface ExperimentalRpcQueryOptions<
   method: Method;
   input: StandardSchemaV1InferInput<Contract[Method]["input"]>;
   enabled?: boolean;
+  /** Optional positive, finite RPC deadline in milliseconds. Omit for no deadline. Does not cancel server work or bound mutation reconciliation. */
+  timeoutMs?: number;
 }
 
 export interface ExperimentalRpcMutationOptions<
@@ -3942,6 +3944,8 @@ export interface ExperimentalRpcMutationOptions<
 > {
   pluginId?: string;
   method: Method;
+  /** Optional positive, finite RPC deadline in milliseconds. Omit for no deadline. Does not cancel server work or bound mutation reconciliation. */
+  timeoutMs?: number;
 }
 
 /**

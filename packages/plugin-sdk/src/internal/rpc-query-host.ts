@@ -46,15 +46,23 @@ async function callWithDeadline(
   pluginId: string,
   method: string,
   input: JsonValue,
+  timeoutMs: number | undefined,
 ) {
+  if (timeoutMs === undefined) return host.call(pluginId, method, input);
+  const deadlineMs = z.number().positive().finite().parse(timeoutMs);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       host.call(pluginId, method, input),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`RPC "${method}" timed out after 20 seconds`)),
-          20_000,
+          () =>
+            reject(
+              new Error(
+                `RPC "${method}" timed out after ${deadlineMs / 1000} seconds`,
+              ),
+            ),
+          deadlineMs,
         );
       }),
     ]);
@@ -90,7 +98,13 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
         queryFn: () =>
           runTaggedRead(host.queryClient, queryKey, async () =>
             envelopeSchema.parse(
-              await callWithDeadline(host, pluginId, options.method, input),
+              await callWithDeadline(
+                host,
+                pluginId,
+                options.method,
+                input,
+                options.timeoutMs,
+              ),
             ),
           ),
       },
@@ -138,9 +152,7 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
         scope: pluginTagScope(pluginId),
         read: async (keys) => {
           const response = envelopeSchema.parse(
-            await callWithDeadline(host, pluginId, options.method, {
-              keys: [...keys],
-            }),
+            await host.call(pluginId, options.method, { keys: [...keys] }),
           );
           return {
             ...response,
@@ -207,6 +219,7 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
               pluginId,
               options.method,
               input ?? null,
+              options.timeoutMs,
             ),
           ),
       ) as ReturnType<PluginSdkApp["experimental_useRpcMutation"]>;
