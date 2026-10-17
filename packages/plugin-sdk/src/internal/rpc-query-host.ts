@@ -41,6 +41,28 @@ const owners = new WeakMap<
   QueryClient,
   Map<string, ReturnType<typeof createTaggedKeyedQueryOwner<JsonValue>>>
 >();
+async function callWithDeadline(
+  host: RpcQueryHost,
+  pluginId: string,
+  method: string,
+  input: JsonValue,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      host.call(pluginId, method, input),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`RPC "${method}" timed out after 20 seconds`)),
+          20_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
   function useSubscription(
     host: RpcQueryHost,
@@ -68,7 +90,7 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
         queryFn: () =>
           runTaggedRead(host.queryClient, queryKey, async () =>
             envelopeSchema.parse(
-              await host.call(pluginId, options.method, input),
+              await callWithDeadline(host, pluginId, options.method, input),
             ),
           ),
       },
@@ -116,7 +138,9 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
         scope: pluginTagScope(pluginId),
         read: async (keys) => {
           const response = envelopeSchema.parse(
-            await host.call(pluginId, options.method, { keys: [...keys] }),
+            await callWithDeadline(host, pluginId, options.method, {
+              keys: [...keys],
+            }),
           );
           return {
             ...response,
@@ -178,7 +202,12 @@ export function createRpcQueryHooks(useHost: () => RpcQueryHost) {
           invalidateTags(host.queryClient, pluginTagScope(pluginId), tags),
         async (input?: JsonValue) =>
           envelopeSchema.parse(
-            await host.call(pluginId, options.method, input ?? null),
+            await callWithDeadline(
+              host,
+              pluginId,
+              options.method,
+              input ?? null,
+            ),
           ),
       ) as ReturnType<PluginSdkApp["experimental_useRpcMutation"]>;
     };
